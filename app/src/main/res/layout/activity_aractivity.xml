@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- GL Surface View for AR Camera -->
+    <android.opengl.GLSurfaceView
+        android:id="@+id/surfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Top instruction text -->
+    <TextView
+        android:id="@+id/tvInstruction"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal|top"
+        android:layout_marginTop="32dp"
+        android:background="#80000000"
+        android:padding="16dp"
+        android:text="Move your phone slowly to detect surfaces"
+        android:textColor="@android:color/white"
+        android:textSize="16sp" />
+
+    <!-- Bottom control panel -->
+    <LinearLayout
+        android:id="@+id/controlPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#DD000000"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Waypoint name input -->
+        <EditText
+            android:id="@+id/etWaypointName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Enter location name (e.g., Library)"
+            android:textColor="@android:color/white"
+            android:textColorHint="#AAAAAA"
+            android:background="@android:color/darker_gray"
+            android:padding="12dp"
+            android:inputType="text"
+            android:imeOptions="actionDone" />
+
+        <!-- Info text -->
+        <TextView
+            android:id="@+id/tvInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tap on a detected surface to place waypoint"
+            android:textColor="#FFCC00"
+            android:textSize="14sp"
+            android:layout_marginTop="8dp"
+            android:gravity="center" />
+
+        <!-- Buttons row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp"
+            android:gravity="center">
+
+            <Button
+                android:id="@+id/btnClearLast"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Clear Last"
+                android:layout_marginEnd="8dp"
+                android:enabled="false" />
+
+            <Button
+                android:id="@+id/btnSavePath"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Save Path"
+                android:layout_marginStart="8dp"
+                android:enabled="false" />
+        </LinearLayout>
+
+        <!-- Waypoint counter -->
+        <TextView
+            android:id="@+id/tvWaypointCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Waypoints placed: 0"
+            android:textColor="@android:color/white"
+            android:layout_marginTop="8dp"
+            android:layout_gravity="center" />
+    </LinearLayout>
+
+</FrameLayout>
