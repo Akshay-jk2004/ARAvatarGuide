@@ -40,9 +40,9 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var installRequested = false
     private val waypoints = mutableListOf<Waypoint>()
     private var renderer: SimpleRenderer? = null
+    private var backgroundRenderer: BackgroundRenderer? = null
 
-    private val waypointColor = floatArrayOf(0.0f, 1.0f, 0.0f, 1.0f) // Green
-    private val destinationColor = floatArrayOf(1.0f, 0.0f, 0.0f, 1.0f) // Red
+    private val waypointColor = floatArrayOf(0.0f, 1.0f, 0.0f, 1.0f)
 
     companion object {
         private const val CAMERA_PERMISSION_CODE = 100
@@ -52,7 +52,6 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_aractivity)
 
-        // Initialize views
         surfaceView = findViewById(R.id.surfaceView)
         tvInstruction = findViewById(R.id.tvInstruction)
         tvInfo = findViewById(R.id.tvInfo)
@@ -61,14 +60,12 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         btnClearLast = findViewById(R.id.btnClearLast)
         btnSavePath = findViewById(R.id.btnSavePath)
 
-        // Setup OpenGL
         surfaceView.preserveEGLContextOnPause = true
         surfaceView.setEGLContextClientVersion(2)
         surfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
         surfaceView.setRenderer(this)
         surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
 
-        // Setup touch listener for placing waypoints
         surfaceView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
                 onTap(event.x, event.y)
@@ -78,11 +75,8 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             }
         }
 
-        // Setup buttons
         btnClearLast.setOnClickListener { clearLastWaypoint() }
         btnSavePath.setOnClickListener { savePath() }
-
-        Toast.makeText(this, "AR Mode - Initializing...", Toast.LENGTH_SHORT).show()
 
         if (!hasCameraPermission()) {
             requestCameraPermission()
@@ -96,38 +90,36 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             val frame = session.update()
 
             if (frame.camera.trackingState != TrackingState.TRACKING) {
-                Toast.makeText(this, "Wait for tracking to stabilize", Toast.LENGTH_SHORT).show()
+                runOnUiThread {
+                    Toast.makeText(this, "Wait for tracking", Toast.LENGTH_SHORT).show()
+                }
                 return
             }
 
-            // Get name from input
             val waypointName = etWaypointName.text.toString().trim()
             if (waypointName.isEmpty()) {
-                Toast.makeText(this, "Please enter a location name first", Toast.LENGTH_SHORT).show()
+                runOnUiThread {
+                    Toast.makeText(this, "Enter location name first", Toast.LENGTH_SHORT).show()
+                }
                 return
             }
 
-            // Perform hit test
             val hits: List<HitResult> = frame.hitTest(x, y)
 
             for (hit in hits) {
                 val trackable = hit.trackable
 
-                // Check if we hit a plane
                 if (trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)) {
-                    // Create waypoint
                     val waypointId = "WP${waypoints.size + 1}"
                     val waypoint = Waypoint(waypointId, waypointName, hit.hitPose)
                     waypoints.add(waypoint)
 
-                    // Update UI
                     runOnUiThread {
                         updateWaypointCount()
                         etWaypointName.text.clear()
                         hideKeyboard()
-                        Toast.makeText(this, "Waypoint '$waypointName' placed!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "✓ $waypointName placed!", Toast.LENGTH_SHORT).show()
                     }
-
                     break
                 }
             }
@@ -152,13 +144,9 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
         val pathManager = PathManager(this)
         if (pathManager.savePath(waypoints)) {
-            Toast.makeText(
-                this,
-                "✓ Path saved! ${waypoints.size} waypoints",
-                Toast.LENGTH_LONG
-            ).show()
+            Toast.makeText(this, "✓ Saved ${waypoints.size} waypoints!", Toast.LENGTH_LONG).show()
         } else {
-            Toast.makeText(this, "Failed to save path", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Failed to save", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -174,27 +162,15 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     private fun hasCameraPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun requestCameraPermission() {
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.CAMERA),
-            CAMERA_PERMISSION_CODE
-        )
+        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_CODE)
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
         if (requestCode == CAMERA_PERMISSION_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Toast.makeText(this, "Camera permission granted!", Toast.LENGTH_SHORT).show()
@@ -209,7 +185,6 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         super.onResume()
 
         if (!hasCameraPermission()) {
-            tvInstruction.text = "Camera permission required"
             return
         }
 
@@ -221,23 +196,16 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                         return
                     }
                     ArCoreApk.InstallStatus.INSTALLED -> {}
-                    else -> {
-                        Toast.makeText(this, "ARCore installation failed", Toast.LENGTH_LONG).show()
-                        return
-                    }
+                    else -> return
                 }
 
                 arSession = Session(this)
-
                 val config = Config(arSession)
                 config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
                 config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
                 arSession?.configure(config)
 
-                Toast.makeText(this, "AR Session Started!", Toast.LENGTH_SHORT).show()
-
             } catch (e: Exception) {
-                Toast.makeText(this, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
                 e.printStackTrace()
                 return
             }
@@ -247,7 +215,7 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             arSession?.resume()
             surfaceView.onResume()
         } catch (e: CameraNotAvailableException) {
-            Toast.makeText(this, "Camera not available", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
             arSession = null
         }
     }
@@ -264,9 +232,12 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         arSession = null
     }
 
-    // OpenGL Renderer methods
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         GLES20.glClearColor(0.1f, 0.1f, 0.1f, 1.0f)
+
+        backgroundRenderer = BackgroundRenderer()
+        backgroundRenderer?.createOnGlThread(this)
+
         renderer = SimpleRenderer()
         renderer?.createOnGlThread()
     }
@@ -282,25 +253,22 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val session = arSession ?: return
 
         try {
-            session.setCameraTextureName(0)
+            session.setCameraTextureName(backgroundRenderer?.getTextureId() ?: 0)
             val frame: Frame = session.update()
             val camera = frame.camera
 
+            // Draw camera background
+            backgroundRenderer?.draw(frame)
+
             if (camera.trackingState != TrackingState.TRACKING) {
-                runOnUiThread {
-                    tvInstruction.text = "Move phone slowly to detect surfaces"
-                    tvInfo.text = "Searching for surfaces..."
-                }
                 return
             }
 
-            // Get camera matrices
             val viewMatrix = FloatArray(16)
             val projectionMatrix = FloatArray(16)
             camera.getViewMatrix(viewMatrix, 0)
             camera.getProjectionMatrix(projectionMatrix, 0, 0.1f, 100f)
 
-            // Check for detected planes
             val planesDetected = session.getAllTrackables(Plane::class.java).any {
                 it.trackingState == TrackingState.TRACKING
             }
@@ -310,12 +278,11 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     tvInstruction.text = "Surface detected! Tap to place waypoint"
                     tvInfo.text = "Enter name and tap on surface"
                 } else {
-                    tvInstruction.text = "Move phone to detect surfaces"
+                    tvInstruction.text = "Move phone slowly"
                     tvInfo.text = "Point camera at floor"
                 }
             }
 
-            // Draw waypoints
             renderer?.let { r ->
                 waypoints.forEach { waypoint ->
                     r.draw(viewMatrix, projectionMatrix, waypoint.x, waypoint.y, waypoint.z, waypointColor)
