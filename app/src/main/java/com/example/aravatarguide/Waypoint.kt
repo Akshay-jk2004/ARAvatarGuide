@@ -8,24 +8,34 @@ data class Waypoint(
     val x: Float,
     val y: Float,
     val z: Float,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val isStartPoint: Boolean = false,
+    val isEndPoint: Boolean = false,
+    val pathIndex: Int = 0  // Order in the path
 ) {
-    // Constructor from ARCore Pose
-    constructor(id: String, name: String, pose: Pose) : this(
+    constructor(id: String, name: String, pose: Pose, isStart: Boolean = false, isEnd: Boolean = false, index: Int = 0) : this(
         id = id,
         name = name,
         x = pose.tx(),
         y = pose.ty(),
-        z = pose.tz()
+        z = pose.tz(),
+        isStartPoint = isStart,
+        isEndPoint = isEnd,
+        pathIndex = index
     )
 
-    // Convert back to string for saving
     fun toSaveString(): String {
-        return "$id|$name|$x|$y|$z|$timestamp"
+        return "$id|$name|$x|$y|$z|$timestamp|$isStartPoint|$isEndPoint|$pathIndex"
+    }
+
+    fun distanceTo(other: Waypoint): Float {
+        val dx = x - other.x
+        val dy = y - other.y
+        val dz = z - other.z
+        return kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
     }
 
     companion object {
-        // Create from saved string
         fun fromSaveString(data: String): Waypoint? {
             return try {
                 val parts = data.split("|")
@@ -35,7 +45,10 @@ data class Waypoint(
                     x = parts[2].toFloat(),
                     y = parts[3].toFloat(),
                     z = parts[4].toFloat(),
-                    timestamp = parts[5].toLong()
+                    timestamp = parts[5].toLong(),
+                    isStartPoint = parts[6].toBoolean(),
+                    isEndPoint = parts[7].toBoolean(),
+                    pathIndex = parts[8].toInt()
                 )
             } catch (e: Exception) {
                 null

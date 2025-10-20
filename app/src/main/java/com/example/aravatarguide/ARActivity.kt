@@ -6,10 +6,11 @@ import android.content.pm.PackageManager
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Bundle
-import android.view.MotionEvent
+import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -18,8 +19,6 @@ import androidx.core.content.ContextCompat
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.Frame
-import com.google.ar.core.HitResult
-import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -31,18 +30,24 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var arSession: Session? = null
     private lateinit var surfaceView: GLSurfaceView
     private lateinit var tvInstruction: TextView
-    private lateinit var tvInfo: TextView
+    private lateinit var tvRecordingStatus: TextView
     private lateinit var tvWaypointCount: TextView
-    private lateinit var etWaypointName: EditText
-    private lateinit var btnClearLast: Button
-    private lateinit var btnSavePath: Button
+    private lateinit var tvPathInfo: TextView
+    private lateinit var etStartPoint: EditText
+    private lateinit var etDestination: EditText
+    private lateinit var btnStartRecording: Button
+    private lateinit var btnStopRecording: Button
+    private lateinit var layoutStartPoint: LinearLayout
+    private lateinit var layoutDestination: LinearLayout
 
     private var installRequested = false
-    private val waypoints = mutableListOf<Waypoint>()
     private var renderer: SimpleRenderer? = null
     private var backgroundRenderer: BackgroundRenderer? = null
+    private val pathRecorder = PathRecorder()
 
-    private val waypointColor = floatArrayOf(0.0f, 1.0f, 0.0f, 1.0f)
+    private val waypointColor = floatArrayOf(0.0f, 1.0f, 0.0f, 1.0f) // Green
+    private val startPointColor = floatArrayOf(0.0f, 0.0f, 1.0f, 1.0f) // Blue
+    private val endPointColor = floatArrayOf(1.0f, 0.0f, 0.0f, 1.0f) // Red
 
     companion object {
         private const val CAMERA_PERMISSION_CODE = 100
@@ -52,113 +57,101 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_aractivity)
 
+        // Initialize views
         surfaceView = findViewById(R.id.surfaceView)
         tvInstruction = findViewById(R.id.tvInstruction)
-        tvInfo = findViewById(R.id.tvInfo)
+        tvRecordingStatus = findViewById(R.id.tvRecordingStatus)
         tvWaypointCount = findViewById(R.id.tvWaypointCount)
-        etWaypointName = findViewById(R.id.etWaypointName)
-        btnClearLast = findViewById(R.id.btnClearLast)
-        btnSavePath = findViewById(R.id.btnSavePath)
+        tvPathInfo = findViewById(R.id.tvPathInfo)
+        etStartPoint = findViewById(R.id.etStartPoint)
+        etDestination = findViewById(R.id.etDestination)
+        btnStartRecording = findViewById(R.id.btnStartRecording)
+        btnStopRecording = findViewById(R.id.btnStopRecording)
+        layoutStartPoint = findViewById(R.id.layoutStartPoint)
+        layoutDestination = findViewById(R.id.layoutDestination)
 
+        // Setup OpenGL
         surfaceView.preserveEGLContextOnPause = true
         surfaceView.setEGLContextClientVersion(2)
         surfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
         surfaceView.setRenderer(this)
         surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
 
-        surfaceView.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                onTap(event.x, event.y)
-                true
-            } else {
-                false
-            }
-        }
-
-        btnClearLast.setOnClickListener { clearLastWaypoint() }
-        btnSavePath.setOnClickListener { savePath() }
+        // Setup buttons
+        btnStartRecording.setOnClickListener { startRecording() }
+        btnStopRecording.setOnClickListener { stopRecording() }
 
         if (!hasCameraPermission()) {
             requestCameraPermission()
         }
     }
 
-    private fun onTap(x: Float, y: Float) {
-        val session = arSession ?: return
+    private fun startRecording() {
+        val startName = etStartPoint.text.toString().trim()
 
-        try {
-            val frame = session.update()
-
-            if (frame.camera.trackingState != TrackingState.TRACKING) {
-                runOnUiThread {
-                    Toast.makeText(this, "Wait for tracking", Toast.LENGTH_SHORT).show()
-                }
-                return
-            }
-
-            val waypointName = etWaypointName.text.toString().trim()
-            if (waypointName.isEmpty()) {
-                runOnUiThread {
-                    Toast.makeText(this, "Enter location name first", Toast.LENGTH_SHORT).show()
-                }
-                return
-            }
-
-            val hits: List<HitResult> = frame.hitTest(x, y)
-
-            for (hit in hits) {
-                val trackable = hit.trackable
-
-                if (trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)) {
-                    val waypointId = "WP${waypoints.size + 1}"
-                    val waypoint = Waypoint(waypointId, waypointName, hit.hitPose)
-                    waypoints.add(waypoint)
-
-                    runOnUiThread {
-                        updateWaypointCount()
-                        etWaypointName.text.clear()
-                        hideKeyboard()
-                        Toast.makeText(this, "✓ $waypointName placed!", Toast.LENGTH_SHORT).show()
-                    }
-                    break
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun clearLastWaypoint() {
-        if (waypoints.isNotEmpty()) {
-            val removed = waypoints.removeLast()
-            Toast.makeText(this, "Removed: ${removed.name}", Toast.LENGTH_SHORT).show()
-            updateWaypointCount()
-        }
-    }
-
-    private fun savePath() {
-        if (waypoints.isEmpty()) {
-            Toast.makeText(this, "No waypoints to save", Toast.LENGTH_SHORT).show()
+        if (startName.isEmpty()) {
+            Toast.makeText(this, "Please enter starting point name", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val pathManager = PathManager(this)
-        if (pathManager.savePath(waypoints)) {
-            Toast.makeText(this, "✓ Saved ${waypoints.size} waypoints!", Toast.LENGTH_LONG).show()
-        } else {
-            Toast.makeText(this, "Failed to save", Toast.LENGTH_LONG).show()
+        pathRecorder.startRecording(startName)
+
+        // Update UI
+        runOnUiThread {
+            layoutStartPoint.visibility = View.GONE
+            layoutDestination.visibility = View.VISIBLE
+            tvRecordingStatus.visibility = View.VISIBLE
+            tvWaypointCount.visibility = View.VISIBLE
+            tvInstruction.text = "Walk slowly towards destination"
+            tvPathInfo.text = "Keep phone steady and walk at normal pace"
+            hideKeyboard()
+
+            Toast.makeText(this, "🎬 Recording started from $startName", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun updateWaypointCount() {
-        tvWaypointCount.text = "Waypoints placed: ${waypoints.size}"
-        btnClearLast.isEnabled = waypoints.isNotEmpty()
-        btnSavePath.isEnabled = waypoints.isNotEmpty()
+    private fun stopRecording() {
+        val destinationName = etDestination.text.toString().trim()
+
+        if (destinationName.isEmpty()) {
+            Toast.makeText(this, "Please enter destination name", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val recordedPath = pathRecorder.stopRecording(destinationName)
+
+        if (recordedPath.isEmpty()) {
+            Toast.makeText(this, "No path recorded. Try again.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Save path
+        val pathManager = PathManager(this)
+        if (pathManager.savePath(recordedPath)) {
+            runOnUiThread {
+                tvRecordingStatus.visibility = View.GONE
+                Toast.makeText(
+                    this,
+                    "✅ Path saved! ${recordedPath.size} waypoints\nFrom: ${recordedPath.first().name}\nTo: $destinationName",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                // Reset UI
+                layoutStartPoint.visibility = View.VISIBLE
+                layoutDestination.visibility = View.GONE
+                tvWaypointCount.visibility = View.GONE
+                etStartPoint.text.clear()
+                etDestination.text.clear()
+                tvInstruction.text = "Path saved! Create another path or go back."
+            }
+        } else {
+            Toast.makeText(this, "Failed to save path", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun hideKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.hideSoftInputFromWindow(etWaypointName.windowToken, 0)
+        imm.hideSoftInputFromWindow(etStartPoint.windowToken, 0)
     }
 
     private fun hasCameraPermission(): Boolean {
@@ -184,9 +177,7 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     override fun onResume() {
         super.onResume()
 
-        if (!hasCameraPermission()) {
-            return
-        }
+        if (!hasCameraPermission()) return
 
         if (arSession == null) {
             try {
@@ -202,7 +193,6 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 arSession = Session(this)
                 val config = Config(arSession)
                 config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
                 arSession?.configure(config)
 
             } catch (e: Exception) {
@@ -264,28 +254,31 @@ class ARActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 return
             }
 
+            // Record waypoint if recording
+            if (pathRecorder.isCurrentlyRecording()) {
+                val recorded = pathRecorder.recordPoint(camera.pose)
+                if (recorded) {
+                    runOnUiThread {
+                        val count = pathRecorder.getRecordedPointsCount()
+                        tvWaypointCount.text = "Waypoints recorded: $count"
+                    }
+                }
+            }
+
+            // Draw recorded waypoints
             val viewMatrix = FloatArray(16)
             val projectionMatrix = FloatArray(16)
             camera.getViewMatrix(viewMatrix, 0)
             camera.getProjectionMatrix(projectionMatrix, 0, 0.1f, 100f)
 
-            val planesDetected = session.getAllTrackables(Plane::class.java).any {
-                it.trackingState == TrackingState.TRACKING
-            }
-
-            runOnUiThread {
-                if (planesDetected) {
-                    tvInstruction.text = "Surface detected! Tap to place waypoint"
-                    tvInfo.text = "Enter name and tap on surface"
-                } else {
-                    tvInstruction.text = "Move phone slowly"
-                    tvInfo.text = "Point camera at floor"
-                }
-            }
-
             renderer?.let { r ->
-                waypoints.forEach { waypoint ->
-                    r.draw(viewMatrix, projectionMatrix, waypoint.x, waypoint.y, waypoint.z, waypointColor)
+                pathRecorder.getRecordedPoints().forEach { waypoint ->
+                    val color = when {
+                        waypoint.isStartPoint -> startPointColor
+                        waypoint.isEndPoint -> endPointColor
+                        else -> waypointColor
+                    }
+                    r.draw(viewMatrix, projectionMatrix, waypoint.x, waypoint.y, waypoint.z, color)
                 }
             }
 

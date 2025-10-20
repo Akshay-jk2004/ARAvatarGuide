@@ -110,6 +110,12 @@ class VisitorActivity : AppCompatActivity(), GLSurfaceView.Renderer, TextToSpeec
             tvSpeechInput.text = "Tap 🎤 and say: 'Take me to ${waypoints.first().name}'"
         }
     }
+    private fun findNearestStartPoint(): Waypoint? {
+        return waypoints.filter { it.isStartPoint }.minByOrNull { waypoint ->
+            // We'll calculate distance in onDrawFrame when we have camera pose
+            0f
+        }
+    }
 
     private fun checkPermissions() {
         val permissionsNeeded = mutableListOf<String>()
@@ -381,7 +387,6 @@ class VisitorActivity : AppCompatActivity(), GLSurfaceView.Renderer, TextToSpeec
             val frame: Frame = session.update()
             val camera = frame.camera
 
-            // Draw camera background
             backgroundRenderer?.draw(frame)
 
             if (camera.trackingState != TrackingState.TRACKING) {
@@ -395,59 +400,85 @@ class VisitorActivity : AppCompatActivity(), GLSurfaceView.Renderer, TextToSpeec
                 tvStatus.text = "AR Guide Active"
             }
 
-            // Get camera matrices
             val viewMatrix = FloatArray(16)
             val projectionMatrix = FloatArray(16)
             camera.getViewMatrix(viewMatrix, 0)
             camera.getProjectionMatrix(projectionMatrix, 0, 0.1f, 100f)
 
-            // Get camera position and rotation
             val cameraPos = camera.pose.translation
             val cameraRotation = camera.pose.rotationQuaternion
+
+            // Find nearest waypoint to current position (auto-detect location)
+            val nearestWaypoint = waypoints.minByOrNull { waypoint ->
+                val dx = waypoint.x - cameraPos[0]
+                val dz = waypoint.z - cameraPos[2]
+                sqrt(dx * dx + dz * dz)
+            }
 
             // Draw all waypoints
             renderer?.let { r ->
                 waypoints.forEach { waypoint ->
-                    val color = if (waypoint == currentDestination) destinationColor else waypointColor
+                    val color = when {
+                        waypoint == currentDestination -> destinationColor
+                        waypoint == nearestWaypoint -> floatArrayOf(1.0f, 1.0f, 0.0f, 1.0f) // Yellow for nearest
+                        else -> waypointColor
+                    }
                     r.draw(viewMatrix, projectionMatrix, waypoint.x, waypoint.y, waypoint.z, color)
                 }
             }
 
-            // Draw navigation arrow to destination
+            // Navigation logic
             currentDestination?.let { dest ->
-                val navInfo = navigationHelper.calculateNavigation(cameraPos, cameraRotation, dest)
+                // Find path from nearest waypoint to destination
+                val pathToFollow = findPathBetweenWaypoints(nearestWaypoint, dest)
+                val nextWaypoint = pathToFollow.firstOrNull()
 
-                // Update UI with navigation info
-                runOnUiThread {
-                    val directionText = navigationHelper.getDirectionText(navInfo.distance)
-                    tvDestination.text = "→ ${dest.name}"
-                    tvDirection.text = directionText
-                    tvDirection.visibility = TextView.VISIBLE
+                if (nextWaypoint != null) {
+                    val navInfo = navigationHelper.calculateNavigation(cameraPos, cameraRotation, nextWaypoint)
 
-                    // Check if arrived
-                    if (navInfo.distance < 1.0f) {
-                        showArrow = false
-                        speak("You have arrived at ${dest.name}")
-                        tvAvatarStatus.text = "✓ Arrived!"
-                        tvDirection.visibility = TextView.GONE
-                        currentDestination = null
+                    runOnUiThread {
+                        val directionText = navigationHelper.getDirectionText(navInfo.distance)
+                        tvDestination.text = "→ ${dest.name}"
+                        tvDirection.text = directionText
+                        tvDirection.visibility = TextView.VISIBLE
+
+                        if (navInfo.distance < 1.0f) {
+                            showArrow = false
+                            speak("You have arrived at ${dest.name}")
+                            tvAvatarStatus.text = "✓ Arrived!"
+                            tvDirection.visibility = TextView.GONE
+                            currentDestination = null
+                        }
                     }
-                }
 
-                // Draw arrow if navigation is active
-                if (showArrow && arrowModel != null) {
-                    val arrowMvp = navigationHelper.createArrowMatrix(
-                        navInfo.arrowPosition,
-                        navInfo.arrowRotation,
-                        viewMatrix,
-                        projectionMatrix
-                    )
-                    arrowModel?.draw(arrowMvp, arrowColor)
+                    if (showArrow && arrowModel != null) {
+                        val arrowMvp = navigationHelper.createArrowMatrix(
+                            navInfo.arrowPosition,
+                            navInfo.arrowRotation,
+                            viewMatrix,
+                            projectionMatrix
+                        )
+                        arrowModel?.draw(arrowMvp, arrowColor)
+                    }
                 }
             }
 
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    private fun findPathBetweenWaypoints(start: Waypoint?, destination: Waypoint?): List<Waypoint> {
+        if (start == null || destination == null) return emptyList()
+
+        // Get all waypoints between start and destination in order
+        val startIndex = start.pathIndex
+        val destIndex = destination.pathIndex
+
+        return if (startIndex < destIndex) {
+            waypoints.filter { it.pathIndex in startIndex..destIndex }.sortedBy { it.pathIndex }
+        } else {
+            waypoints.filter { it.pathIndex in destIndex..startIndex }.sortedByDescending { it.pathIndex }
         }
     }
 }
