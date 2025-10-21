@@ -2,7 +2,9 @@ package com.example.aravatarguide
 
 import android.content.Context
 import android.opengl.GLES20
-import java.io.IOException
+import android.opengl.Matrix
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -19,42 +21,140 @@ class ModelLoader(private val context: Context) {
     private var indexCount = 0
 
     fun loadModel(assetPath: String) {
-        try {
-            // For simplicity, we'll create a simple arrow shape programmatically
-            // This avoids complex GLB parsing which requires additional libraries
-            createSimpleArrow()
-        } catch (e: IOException) {
-            e.printStackTrace()
+        // For simplicity, we'll use a pre-defined arrow shape
+        // GLB parsing requires complex libraries, so we'll create a nice arrow programmatically
+        if (assetPath.contains("arrow")) {
+            createArrowShape()
+        } else if (assetPath.contains("avatar")) {
+            createAvatarShape()
         }
     }
 
-    private fun createSimpleArrow() {
-        // Create a simple 3D arrow pointing forward
-        // Arrow points in +Z direction
+    private fun createArrowShape() {
+        // 3D Arrow pointing forward (better visibility)
         val vertices = floatArrayOf(
-            // Arrow head (triangle)
-            0.0f, 0.1f, 0.3f,   // top
-            -0.15f, 0.0f, 0.0f,  // left
-            0.15f, 0.0f, 0.0f,   // right
+            // Arrow head (large triangle)
+            0.0f, 0.1f, 0.5f,      // tip
+            -0.25f, 0.1f, 0.0f,    // left wing
+            0.25f, 0.1f, 0.0f,     // right wing
 
-            // Arrow shaft (rectangle)
-            -0.05f, 0.0f, 0.0f,  // shaft left front
-            0.05f, 0.0f, 0.0f,   // shaft right front
-            -0.05f, 0.0f, -0.3f, // shaft left back
-            0.05f, 0.0f, -0.3f   // shaft right back
+            // Arrow shaft
+            -0.1f, 0.1f, 0.0f,
+            0.1f, 0.1f, 0.0f,
+            -0.1f, 0.1f, -0.4f,
+            0.1f, 0.1f, -0.4f,
+
+            // Bottom layer (3D effect)
+            0.0f, 0.05f, 0.5f,
+            -0.25f, 0.05f, 0.0f,
+            0.25f, 0.05f, 0.0f,
+            -0.1f, 0.05f, 0.0f,
+            0.1f, 0.05f, 0.0f,
+            -0.1f, 0.05f, -0.4f,
+            0.1f, 0.05f, -0.4f
         )
 
         val indices = shortArrayOf(
-            // Head triangle
-            0, 1, 2,
-            // Shaft quad (two triangles)
-            3, 4, 5,
-            4, 6, 5
+            // Top surface
+            0, 1, 2,  // head
+            3, 4, 5,  // shaft
+            4, 6, 5,
+            // Bottom surface
+            7, 8, 9,
+            10, 11, 12,
+            11, 13, 12,
+            // Sides (connect top and bottom)
+            0, 7, 1,
+            1, 7, 8,
+            0, 2, 7,
+            2, 9, 7
         )
 
         indexCount = indices.size
 
-        // Create buffers
+        val vbb = ByteBuffer.allocateDirect(vertices.size * 4)
+        vbb.order(ByteOrder.nativeOrder())
+        vertexBuffer = vbb.asFloatBuffer()
+        vertexBuffer?.put(vertices)
+        vertexBuffer?.position(0)
+
+        val ibb = ByteBuffer.allocateDirect(indices.size * 2)
+        ibb.order(ByteOrder.nativeOrder())
+        indexBuffer = ibb.asShortBuffer()
+        indexBuffer?.put(indices)
+        indexBuffer?.position(0)
+    }
+
+    private fun createAvatarShape() {
+        // Simple 3D humanoid avatar
+        val vertices = floatArrayOf(
+            // Head (cube)
+            -0.15f, 1.8f, -0.15f,
+            0.15f, 1.8f, -0.15f,
+            0.15f, 1.8f, 0.15f,
+            -0.15f, 1.8f, 0.15f,
+            -0.15f, 1.5f, -0.15f,
+            0.15f, 1.5f, -0.15f,
+            0.15f, 1.5f, 0.15f,
+            -0.15f, 1.5f, 0.15f,
+
+            // Body (rectangular)
+            -0.2f, 1.5f, -0.1f,
+            0.2f, 1.5f, -0.1f,
+            0.2f, 1.5f, 0.1f,
+            -0.2f, 1.5f, 0.1f,
+            -0.2f, 0.8f, -0.1f,
+            0.2f, 0.8f, -0.1f,
+            0.2f, 0.8f, 0.1f,
+            -0.2f, 0.8f, 0.1f,
+
+            // Arms
+            -0.4f, 1.4f, 0.0f,
+            -0.2f, 1.4f, 0.0f,
+            -0.4f, 0.9f, 0.0f,
+            -0.2f, 0.9f, 0.0f,
+            0.2f, 1.4f, 0.0f,
+            0.4f, 1.4f, 0.0f,
+            0.2f, 0.9f, 0.0f,
+            0.4f, 0.9f, 0.0f,
+
+            // Legs
+            -0.15f, 0.8f, 0.0f,
+            -0.05f, 0.8f, 0.0f,
+            -0.15f, 0.0f, 0.0f,
+            -0.05f, 0.0f, 0.0f,
+            0.05f, 0.8f, 0.0f,
+            0.15f, 0.8f, 0.0f,
+            0.05f, 0.0f, 0.0f,
+            0.15f, 0.0f, 0.0f
+        )
+
+        val indices = shortArrayOf(
+            // Head cube
+            0, 1, 2, 0, 2, 3,  // top
+            4, 5, 6, 4, 6, 7,  // bottom
+            0, 1, 5, 0, 5, 4,  // front
+            2, 3, 7, 2, 7, 6,  // back
+            0, 3, 7, 0, 7, 4,  // left
+            1, 2, 6, 1, 6, 5,  // right
+
+            // Body
+            8, 9, 10, 8, 10, 11,
+            12, 13, 14, 12, 14, 15,
+            8, 9, 13, 8, 13, 12,
+            10, 11, 15, 10, 15, 14,
+
+            // Arms
+            16, 17, 19, 16, 19, 18,
+            20, 21, 23, 20, 23, 22,
+
+            // Legs
+            24, 25, 27, 24, 27, 26,
+            28, 29, 31, 28, 31, 30
+        )
+
+        indexCount = indices.size
+
         val vbb = ByteBuffer.allocateDirect(vertices.size * 4)
         vbb.order(ByteOrder.nativeOrder())
         vertexBuffer = vbb.asFloatBuffer()
